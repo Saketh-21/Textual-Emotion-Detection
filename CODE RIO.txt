@@ -1,0 +1,250 @@
+# TensorFlow
+import tensorflow as tf
+
+# nltk package
+from nltk.stem import LancasterStemmer, SnowballStemmer, RegexpStemmer, WordNetLemmatizer 
+import nltk
+nltk.download('punkt')
+
+# import sentence tokenizer
+from nltk import sent_tokenize
+# import word tokenizer
+from nltk import word_tokenize
+# list of stopwords
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+
+# string and regex for text manipulation
+import string
+import re
+
+# managing data and visualization
+import pandas as pd
+import numpy as np
+import seaborn as sns
+import matplotlib.pyplot as plt
+
+# sklearn key features
+import sklearn
+from sklearn.feature_extraction.text import CountVectorizer
+from sklearn.model_selection import train_test_split
+
+# emoji
+!pip install emoji
+import emoji
+import pickle
+
+Exploring and Preparing Data for Sentimental Analysis:
+
+#INPUT THE CSV FILES
+train_data = pd.read_csv(r'C:\Users\Saketh Tulasi\Desktop\Corona_NLP_train.csv',encoding='latin1')
+test_data = pd.read_csv(r'C:\Users\Saketh Tulasi\Desktop\Corona_NLP_test.csv',encoding='latin1')
+
+#MERGE FILES AND INDEX THEM
+df = pd.concat([train_data, test_data], axis = 0)
+df = df.reset_index(drop = True)
+
+#DROP UNNECESSARY COLUMNS
+df = df.drop(['Location'], axis = 'columns')
+df = df.drop(['UserName'], axis = 'columns')
+df = df.drop(['ScreenName'], axis = 'columns')
+
+df.Sentiment.value_counts()
+sns.countplot(x = 'Sentiment', data = df, order = ['Extremely Positive', 'Positive', 'Neutral', 'Negative', 'Extremely Negative'])
+S_num = list()
+S_text = list()
+for label in df.Sentiment:
+  if 'positive' in str(label).lower():
+    S_num.append(2)
+    S_text.append('Positive')
+  elif 'negative' in str(label).lower():
+    S_num.append(0)
+    S_text.append('Negative')
+  else:
+    S_num.append(1)
+    S_text.append('Neutral')
+df = df.drop(['Sentiment'], axis = 'columns')
+df['SentimentCode'] = S_num
+df['Sentiment'] = S_text
+//VISUALIZATION
+sns.countplot(x = 'Sentiment', data = df)
+date_all = pd.to_datetime(df.TweetAt, format = '%d-%m-%Y')
+df['day'] = date_all.dt.day_name()
+df['date'] = date_all.dt.day
+df['month'] = date_all.dt.month
+df = df[['OriginalTweet', 'Sentiment', 'SentimentCode', 'day', 'date', 'month']]
+g = sns.FacetGrid(df, col="day", col_wrap = 4).set_xlabels()
+g.map(sns.histplot, "Sentiment")
+g = sns.FacetGrid(df, col="month", col_wrap = 3).set_xlabels()
+g.map(sns.histplot, "Sentiment")
+
+//Most Frequent Words
+def most_words(text, ngram, n):
+  count = CountVectorizer(ngram_range=(ngram, ngram)).fit(text)
+  vocab = count.transform(text)
+  word_sum = vocab.sum(axis = 0)
+  freq = [(word, word_sum[0, index]) for word, index in count.vocabulary_.items()]
+  freq = sorted(freq, key = lambda x: x[1], reverse=True)
+  return freq[:n]
+
+//Monograms and Bigrams
+most_frequent_single_words = most_words(df.OriginalTweet, ngram=1, n=10)
+df_1word = pd.DataFrame(most_frequent_single_words, columns = ['Words', 'Amount'])
+most_frequent_two_words = most_words(df.OriginalTweet, ngram=2, n=10)
+df_2word = pd.DataFrame(most_frequent_two_words, columns = ['Words', 'Amount'])
+
+DATA PREPROCESSING:
+
+#removing punctuation
+punct =[]
+punct += list(string.punctuation)
+punct += '’'
+punct.remove("'")
+def remove_punctuations(text):
+    for punctuation in punct:
+        text = text.replace(punctuation, ' ')
+    return text
+
+
+#remove emoji
+!pip install emoji
+import emoji
+def char_is_emoji(character):
+    return character in emoji.UNICODE_EMOJI
+
+def text_has_emoji(text):
+    for character in text:
+        if character in emoji.UNICODE_EMOJI:
+            return True
+    return False
+
+def deEmojify(inputString):
+    return inputString.encode('ascii', 'ignore').decode('ascii')
+
+
+#string manipulation to clean the tweets
+def clean_nlp(df): 
+    #lowercase the text
+    df['cleaned_tweet'] = df['OriginalTweet'].apply(lambda x: x.lower())
+    #getting rid of whitespaces
+    df['cleaned_tweet'] = df['cleaned_tweet'].apply(lambda x: x.replace('\n', ' '))
+    #remove links
+    df['cleaned_tweet'] = df['cleaned_tweet'].str.replace('http\S+|www.\S+', '', case=False)
+    #removing '>'
+    df['cleaned_tweet'] = df['cleaned_tweet'].apply(lambda x: x.replace('&gt;', ''))
+    #removing '<'
+    df['cleaned_tweet'] = df['cleaned_tweet'].apply(lambda x: x.replace('&lt;', ''))
+    #checking emoji
+   # df['cleaned_tweet'] = df['cleaned_tweet'].apply(lambda x: text_has_emoji(x))
+    #remove emoji
+    df['cleaned_tweet'] = df['cleaned_tweet'].apply(lambda x: deEmojify(x))
+    #remove punctuation
+    df['cleaned_tweet'] = df['cleaned_tweet'].apply(remove_punctuations)
+    #remove ' s ' that was created after removing punctuations
+    df['cleaned_tweet'] = df['cleaned_tweet'].apply(lambda x: str(x).replace(" s ", " "))
+    return df
+df = clean_nlp(df)
+df['lemmatized'] = df['cleaned_tweet'].apply(lambda x: lemmatize(x))
+
+#After lemmatization, some pronouns are changed to '-PRON' and we're going to remove it
+df['lemmatized'] = df['lemmatized'].apply(lambda x: x.replace('-PRON-', ' '))
+df['tokenized_tweet'] = df['lemmatized'].apply(word_tokenize)
+
+from sklearn.feature_extraction.text import ENGLISH_STOP_WORDS
+
+# create our own stop words set
+custom_set = set()
+# since 'coronavirus' and 'covid' appears in all 3 tweets, let's remove those words
+
+custom_set.add('coronavirus')
+custom_set.add('covid')
+for stopword in ENGLISH_STOP_WORDS:
+  custom_set.add(stopword)
+df['tokenized_tweet'] = df['tokenized_tweet'].apply(lambda word_list: [x for x in word_list if x not in custom_set])
+df['tokenized_tweet'] = df['tokenized_tweet'].apply(lambda list_data: [x for x in list_data if x.isalpha()])
+finale = list()
+for list_of_words in df.tokenized_tweet:
+  finale.append(' '.join(list_of_words))
+df['final_text'] = finale
+
+//POSITIVE,NEUTRAL AND NEGATIVE EMOTIONS BIGRAMS
+bigram_positive = most_words(df[df['Sentiment']=='Positive'].final_text, ngram=2, n=10)
+df_bigram_pos = pd.DataFrame(bigram_positive, columns = ['Words', 'Amount'])
+bigram_neutral = most_words(df[df['Sentiment']=='Neutral'].final_text, ngram=2, n=10)
+df_bigram_neu = pd.DataFrame(bigram_neutral, columns = ['Words', 'Amount'])
+bigram_negative = most_words(df[df['Sentiment']=='Negative'].final_text,ngram=2, n=10)
+df_bigram_neg = pd.DataFrame(bigram_negative, columns = ['Words', 'Amount'])
+X = df.final_text.copy()
+y = df.SentimentCode.copy()
+
+X_train, X_test, y_train, y_test = train_test_split(X, y, test_size = 0.15, random_state = 42)
+
+#maximum number of distinct words recognized
+vocab_size = 40000 
+#embedding dimension
+embedding_dim = 32
+#maximum length of vector
+max_length = 130
+#truncation type
+trunc_type='post'
+#out of vocabulary token (what to label words that does not exist in vocabulary)
+oov_tok = "<OOV>"
+
+
+from tensorflow.keras.preprocessing.text import Tokenizer
+from tensorflow.keras.preprocessing.sequence import pad_sequences
+
+# Tokenize our tweets
+tokenizer = Tokenizer(num_words = vocab_size, oov_token=oov_tok)
+tokenizer.fit_on_texts(X_train)
+word_index = tokenizer.word_index
+sequences = tokenizer.texts_to_sequences(X_train)
+padded = pad_sequences(sequences,maxlen=max_length, truncating=trunc_type)
+testing_sequences = tokenizer.texts_to_sequences(X_test)
+testing_padded = pad_sequences(testing_sequences,maxlen=max_length)
+
+# Model Definition with LSTM
+
+tf.keras.backend.clear_session()
+from tensorflow.keras.losses import SparseCategoricalCrossentropy
+
+# hyper parameters
+embedding_dim = 16
+units = 256
+
+model = tf.keras.Sequential([
+    # word embedding layer
+    tf.keras.layers.Embedding(vocab_size, embedding_dim, input_length=max_length),
+    # normalization layer
+    tf.keras.layers.BatchNormalization(),
+    # Bidirectional LSTM  tf.keras.layers.Bidirectional(tf.keras.layers.LSTM(units,return_sequences=True)),
+    # Pooling layer
+    tf.keras.layers.GlobalMaxPool1D(),
+    # Adding dropout layer to avoid overfitting
+    tf.keras.layers.Dropout(0.5),
+    # Dense layer
+    tf.keras.layers.Dense(32, activation="relu"),
+    # Output layer. The unit size is 3 since we have 3 different classes
+    tf.keras.layers.Dense(3, activation='sigmoid')
+])
+
+# Since our target is classification into '0', '1', or '2'....
+# ...the loss function is Sparse Categorical Crossentropy
+model.compile(loss=SparseCategoricalCrossentropy(),optimizer='adam',metrics=['accuracy'])
+model.summary()
+num_epochs = 2
+history = model.fit(padded, y_train, epochs=num_epochs, validation_data=(testing_padded, y_test))
+
+import matplotlib.pyplot as plt
+def plot_graphs(history, string):
+  plt.plot(history.history[string])
+  plt.plot(history.history['val_'+string])
+  plt.xlabel("Epochs")
+  plt.ylabel(string)
+  plt.legend([string, 'val_'+string])
+  plt.show()plot_graphs(history, 'accuracy')
+plot_graphs(history, 'loss')
+
+
+
+
+
